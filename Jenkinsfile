@@ -4,9 +4,8 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                // Код всё равно чекаутится Jenkins'ом до старта pipeline,
-                // но оставим явный шаг, чтобы было наглядно.
-                git branch: 'main', url: 'https://github.com/DanilBykov01/card-game.git'
+                git branch: 'main',
+                    url: 'https://github.com/DanilBykov01/card-game.git'
             }
         }
 
@@ -14,7 +13,7 @@ pipeline {
             steps {
                 sh '''
                   set -e
-                  docker build -t card-game:latest .
+                  docker build -t card-game:latest -t card-game:$BUILD_NUMBER .
                 '''
             }
         }
@@ -23,22 +22,11 @@ pipeline {
             steps {
                 sh '''
                   set -e
-                  # Запускаем контейнер
-                  CID=$(docker run -d -p 18000:8000 --name cg_test_$BUILD_NUMBER card-game:latest)
-
-                  # Даём приложению подняться
-                  sleep 3
-
-                  # Берём IP адрес контейнера (внутри docker-сети)
-                  IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $CID)
-                  echo "Container ID: $CID"
-                  echo "Container IP: $IP"
-
-                  # Обращаемся прямо к контейнеру по его IP и внутреннему порту 8000
-                  curl -f "http://$IP:8000/" | tee /tmp/smoke_output.txt
-
-                  # Если дошли сюда — всё ок. Чистим контейнер.
-                  docker rm -f $CID
+                  PORT=$((18000 + BUILD_NUMBER))
+                  echo "Using port: $PORT"
+                  CID=$(docker run -d -p $PORT:8000 --name cg_test_$BUILD_NUMBER card-game:latest)
+                  sleep 10
+                  curl -f "http://localhost:$PORT/" | tee /tmp/smoke_output.txt
                 '''
             }
         }
@@ -46,8 +34,9 @@ pipeline {
 
     post {
         always {
-            // На всякий случай прибьём тестовый контейнер, если он вдруг остался
-            sh 'docker rm -f cg_test_$BUILD_NUMBER >/dev/null 2>&1 || true'
+            sh '''
+              docker rm -f cg_test_$BUILD_NUMBER >/dev/null 2>&1 || true
+            '''
         }
     }
 }
